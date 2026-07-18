@@ -1,0 +1,9 @@
+# Password di cifratura: NON deve mai finire su GitHub
+password.local.txt
+
+# Report in chiaro (solo debug locale)
+report.json
+*.plain.json
+
+__pycache__/
+logs/

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="color-scheme" content="light dark">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Report Vendite</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Schermata di sblocco -->
+    <div id="unlock-screen" class="unlock hidden">
+        <div class="unlock-card">
+            <div class="unlock-logo">🔒</div>
+            <h1>Report Vendite</h1>
+            <p class="unlock-hint">Inserisci la password per aprire il report.</p>
+            <form id="unlock-form">
+                <input type="password" id="password-input" inputmode="text"
+                       autocomplete="current-password" placeholder="Password"
+                       autocapitalize="off" autocorrect="off" required>
+                <label class="remember">
+                    <input type="checkbox" id="remember-check" checked>
+                    Ricorda questo dispositivo
+                </label>
+                <button type="submit" id="unlock-btn">Sblocca</button>
+                <p id="unlock-error" class="unlock-error hidden">
+                    Password errata, riprova.
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Caricamento -->
+    <div id="loading-screen" class="unlock">
+        <div class="unlock-card">
+            <div class="spinner"></div>
+            <p class="unlock-hint">Caricamento report…</p>
+        </div>
+    </div>
+
+    <!-- Report -->
+    <main id="report" class="hidden">
+        <header class="report-header">
+            <h1>Vendite di oggi</h1>
+            <p id="report-date" class="report-date"></p>
+        </header>
+
+        <section id="kpi-row" class="kpi-row"></section>
+        <section id="category-summary" class="chips-section"></section>
+        <section id="pos-summary" class="mini-summary"></section>
+        <section id="seller-summary" class="mini-summary"></section>
+
+        <section id="sales-list" class="sales-list"></section>
+
+        <footer class="report-footer">
+            <p id="generated-at" class="generated-at"></p>
+            <button id="forget-btn" class="forget-btn">Dimentica questo dispositivo</button>
+        </footer>
+    </main>
+
+    <script src="report.js"></script>
+</body>
+</html>

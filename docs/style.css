@@ -1,0 +1,313 @@
+/* Report Vendite — mobile-first, iOS Safari */
+
+:root {
+    color-scheme: light dark;
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --ink: #1c1c1e;
+    --ink-secondary: #6e6e73;
+    --ink-muted: #9a9aa0;
+    --divider: #e3e3e8;
+    --accent: #0a66c2;
+    --danger: #c22f2f;
+    --radius: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #101014;
+        --surface: #1c1c22;
+        --ink: #f2f2f5;
+        --ink-secondary: #a3a3ad;
+        --ink-muted: #74747e;
+        --divider: #2c2c34;
+        --accent: #6aaef5;
+        --danger: #ef7070;
+    }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.hidden { display: none !important; }
+
+/* ── Unlock / loading ─────────────────────────────────────────── */
+
+.unlock {
+    min-height: 100svh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.unlock-card {
+    width: 100%;
+    max-width: 360px;
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 32px 24px;
+    text-align: center;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+.unlock-logo { font-size: 40px; margin-bottom: 8px; }
+
+.unlock-card h1 { font-size: 22px; margin: 0 0 4px; }
+
+.unlock-hint {
+    color: var(--ink-secondary);
+    font-size: 14px;
+    margin: 0 0 20px;
+}
+
+#password-input {
+    width: 100%;
+    font-size: 17px;           /* ≥16px: evita lo zoom automatico di iOS */
+    padding: 13px 14px;
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--ink);
+    margin-bottom: 14px;
+}
+
+#password-input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+.remember {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--ink-secondary);
+    margin-bottom: 18px;
+    min-height: 44px;
+}
+
+.remember input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+#unlock-btn {
+    width: 100%;
+    min-height: 48px;
+    font-size: 17px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+#unlock-btn:disabled { opacity: 0.6; }
+
+.unlock-error { color: var(--danger); font-size: 14px; margin: 12px 0 0; }
+
+.spinner {
+    width: 28px;
+    height: 28px;
+    margin: 0 auto 12px;
+    border: 3px solid var(--divider);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Report ───────────────────────────────────────────────────── */
+
+main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 16px 16px 32px;
+}
+
+.report-header h1 { font-size: 26px; margin: 8px 0 2px; }
+
+.report-date {
+    color: var(--ink-secondary);
+    font-size: 15px;
+    margin: 0 0 16px;
+    text-transform: capitalize;
+}
+
+/* KPI: hero numbers */
+.kpi-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.kpi {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+}
+
+.kpi .kpi-value { font-size: 30px; font-weight: 700; line-height: 1.1; }
+
+.kpi .kpi-label {
+    font-size: 13px;
+    color: var(--ink-secondary);
+    margin-top: 2px;
+}
+
+/* Categorie */
+.chips-section {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.chip {
+    background: var(--surface);
+    border-radius: 20px;
+    padding: 7px 12px;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chip .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+.chip b { font-weight: 600; }
+
+.chip .chip-mult { color: var(--ink-secondary); }
+
+/* Riepiloghi POS / venditori */
+.mini-summary {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    font-size: 14px;
+}
+
+.mini-summary .mini-title {
+    flex: 0 0 100%;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-muted);
+    margin-bottom: 2px;
+}
+
+.mini-summary .mini-item { color: var(--ink-secondary); }
+.mini-summary .mini-item b { color: var(--ink); font-weight: 600; }
+
+/* ── Lista vendite ────────────────────────────────────────────── */
+
+.sales-list { margin-top: 16px; }
+
+.sale-card {
+    /* Il colore di sfondo replica la codifica colori del gestionale */
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    color: #1c1c1e;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.sale-card.on-dark { color: #ffffff; }
+
+.sale-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sale-top img { height: 16px; width: auto; flex: none; }
+
+.sale-time {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.sale-customer {
+    font-weight: 700;
+    font-size: 16px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sale-mult {
+    font-weight: 700;
+    font-size: 14px;
+    background: rgba(0, 0, 0, 0.14);
+    border-radius: 8px;
+    padding: 2px 8px;
+    flex: none;
+}
+
+.on-dark .sale-mult { background: rgba(255, 255, 255, 0.22); }
+
+.sale-detail {
+    font-size: 14px;
+    margin-top: 6px;
+    overflow-wrap: anywhere;
+}
+
+.sale-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.tag {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 6px;
+    padding: 2px 7px;
+    font-weight: 600;
+}
+
+.on-dark .tag { background: rgba(255, 255, 255, 0.2); }
+
+.empty-day {
+    text-align: center;
+    color: var(--ink-secondary);
+    padding: 40px 0;
+}
+
+/* ── Footer ───────────────────────────────────────────────────── */
+
+.report-footer {
+    margin-top: 28px;
+    text-align: center;
+}
+
+.generated-at { color: var(--ink-muted); font-size: 12px; margin-bottom: 10px; }
+
+.forget-btn {
+    background: none;
+    border: 1px solid var(--divider);
+    color: var(--danger);
+    font-size: 14px;
+    border-radius: 10px;
+    padding: 10px 18px;
+    min-height: 44px;
+    cursor: pointer;
+}

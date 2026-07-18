@@ -1,0 +1,360 @@
+#!/usr/bin/env python
+"""
+Genera il report giornaliero delle vendite e lo pubblica cifrato in
+docs/data/report.enc.json (AES-256-GCM + PBKDF2-SHA-256, 600.000 iterazioni).
+
+Sorgente dati: PagoDealer.db (%APPDATA%\\Digit srl\\Database), aperto in SOLA
+LETTURA — il database appartiene all'applicazione PagoDealer.
+
+Colori e icone replicano la logica di
+Digitsrl.ContractsPrinting.Report.WebMvc/Views/SalesColorAndImageExtensions.cs.
+
+La password NON è nel codice: viene letta (in ordine) da --password,
+dalla variabile d'ambiente REPORT_PASSWORD, o dal file password.local.txt
+(gitignored). Il report.json in chiaro non viene mai scritto su disco.
+
+Uso:
+    python generate_report.py                 # report di oggi
+    python generate_report.py --date 2026-07-17
+    python generate_report.py --plain out.json   # debug: salva anche il JSON in chiaro
+"""
+
+import argparse
+import base64
+import datetime as dt
+import json
+import os
+import sqlite3
+import sys
+from pathlib import Path
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+OUTPUT_FILE = SCRIPT_DIR / "docs" / "data" / "report.enc.json"
+PASSWORD_FILE = SCRIPT_DIR / "password.local.txt"
+
+PBKDF2_ITERATIONS = 600_000
+
+# Filtri categoria allineati a common.py del progetto WindTreTargetImporter
+FILTER_MOBILE = ("Provider IN ('Wind', 'Very') "
+                 "AND PaymentKind IN ('postpaid', 'prepaid')")
+FILTER_FISSO = "Provider = 'Infostrada'"
+FILTER_SKY_NON_MOBILE = "Provider = 'Sky' AND IsMobile = 0"
+FILTER_SKY_MOBILE = "Provider = 'Sky' AND IsMobile = 1"
+
+
+# ── PagoDealer.db (sola lettura) ─────────────────────────────────────────────
+
+def connect_pagodealer():
+    appdata = os.getenv("APPDATA")
+    if not appdata:
+        sys.exit("APPDATA non definita: impossibile trovare PagoDealer.db")
+    path = Path(appdata) / "Digit srl" / "Database" / "PagoDealer.db"
+    if not path.exists():
+        sys.exit(f"PagoDealer.db non trovato: {path}")
+    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# ── Porting di SalesColorAndImageExtensions.cs ───────────────────────────────
+# Colori System.Drawing → hex
+
+CLR = {
+    "LightGray": "#D3D3D3", "Red": "#FF0000", "DarkGray": "#A9A9A9",
+    "SteelBlue": "#4682B4", "LightSteelBlue": "#B0C4DE",
+    "LightSkyBlue": "#87CEFA", "LightBlue": "#ADD8E6",
+    "DarkSalmon": "#E9967A", "DarkOrange": "#FF8C00", "Orange": "#FFA500",
+    "LightYellow": "#FFFFE0", "PapayaWhip": "#FFEFD5", "White": "#FFFFFF",
+    "YellowGreen": "#9ACD32", "LightGreen": "#90EE90",
+    "ForestGreen": "#228B22", "Khaki": "#F0E68C",
+    "MediumOrchid": "#BA55D3", "MediumPurple": "#9370DB",
+    "MistyRose": "#FFE4E1", "LightSeaGreen": "#20B2AA",
+    "MediumTurquoise": "#48D1CC", "LightSlateGray": "#778899",
+    "Olive": "#808000",
+    "WindNotInTarget": "#DBDBC5",   # Color.FromArgb(219, 219, 197)
+    "SkyNotValid": "#85AABF",       # Color.FromArgb(133, 170, 191)
+}
+
+
+def _has_recharge(s):
+    return (s["RechargeValue"] or 0) > 0
+
+
+def _is_any_leasing(s):
+    return bool(s["IsLeasing"] or s["IsLeasingOnly"] or s["IsFindomestic"])
+
+
+def _infostrada_color(s):
+    return CLR["YellowGreen"] if s["IsBusiness"] else CLR["LightGreen"]
+
+
+def _wind_color(s):
+    if s["IsLandline"] or s["IsFixWirelessAccess"]:
+        return _infostrada_color(s)
+    if s["IsNotValidForProviderTarget"]:
+        return CLR["WindNotInTarget"]
+    if s["IsNotImportant"]:
+        return CLR["LightGray"]
+    kind = s["PaymentKind"]
+    if kind == "postpaid":
+        if _is_any_leasing(s):
+            return CLR["DarkSalmon"] if s["IsBusiness"] else CLR["DarkOrange"]
+        return CLR["DarkSalmon"] if s["IsBusiness"] else CLR["Orange"]
+    if kind == "prepaid":
+        if s["IsLeasingOnly"]:
+            return CLR["DarkSalmon"]
+        return CLR["LightYellow"] if _has_recharge(s) else CLR["PapayaWhip"]
+    return CLR["White"]
+
+
+def compute_color(s):
+    prov = s["Provider"]
+    if not prov or prov == "None":
+        return CLR["LightGray"]
+    if s["IsDeleted"]:
+        return CLR["DarkGray"]
+
+    if prov == "H3G":
+        if s["PaymentKind"] == "postpaid":
+            return CLR["SteelBlue"] if s["IsBusiness"] else CLR["LightSteelBlue"]
+        if s["IsLeasingOnly"]:
+            return CLR["LightSkyBlue"]
+        return CLR["LightBlue"]
+    if prov == "Wind":
+        return _wind_color(s)
+    if prov == "Infostrada":
+        return _infostrada_color(s)
+    if prov == "Very":
+        return CLR["ForestGreen"]
+    if prov == "Kena":
+        return CLR["Khaki"]
+    if prov == "S4Energia":
+        return CLR["MediumOrchid"] if s["IsElectricity"] else CLR["MediumPurple"]
+    if prov in ("Vodafone", "Tim"):
+        return CLR["MistyRose"]
+    if prov in ("Sky", "Fastweb"):
+        if s["IsNotValidForProviderTarget"] or (
+                not (s["IsMobile"] and s["IsMNP"]) and s["PaymentKind"] == "prepaid"):
+            return CLR["SkyNotValid"]
+        if s["IsLandline"]:
+            return CLR["LightSkyBlue"]
+        return CLR["LightSeaGreen"] if s["PaymentKind"] == "postpaid" else CLR["MediumTurquoise"]
+    if prov == "sms":
+        return CLR["LightSlateGray"]
+    if prov == "Findomestic":
+        return CLR["Olive"]
+    # default C#: goto case Wind
+    return _wind_color(s)
+
+
+def _wind_icon(s):
+    if s["IsNotValidForProviderTarget"]:
+        return "WindTre16NotInTarget"
+    if s["IsLandline"] or s["IsFixWirelessAccess"]:
+        return "WindTreFwa16"
+    if s["IsFindomestic"]:
+        return "FindomesticAndReload32x16" if _has_recharge(s) else "Findomestic16"
+    if s["IsLeasingOnly"]:
+        return "WindTreMobile16"
+    if s["IsLeasing"]:
+        if _has_recharge(s):
+            return "WindTreAndReload32x16"
+        return "WindTreBusinessMobile16" if s["IsBusiness"] else "WindTreMobile16"
+    return "WindTreBusiness16" if s["IsBusiness"] else "WindTre16"
+
+
+def compute_icon(s):
+    prov = s["Provider"]
+    if not prov or prov == "None":
+        return "Unknown16"
+    if prov == "H3G":
+        return "Tre16"
+    if prov == "Wind":
+        return _wind_icon(s)
+    if prov == "Findomestic":
+        return "Findomestic16"
+    if prov == "Infostrada":
+        if s["IsFixWirelessAccess"]:
+            return "WindTreFwa16"
+        return "WindTreFiberBusiness16" if s["IsBusiness"] else "WindTreFiber16"
+    if prov == "Very":
+        return "Very16"
+    if prov == "Kena":
+        return "Kena16"
+    if prov == "Ho":
+        return "Ho16"
+    if prov == "S4Energia":
+        return "S4EnergiaElectricity" if s["IsElectricity"] else "S4EnergiaGas"
+    if prov == "Vodafone":
+        return "Vodafone16"
+    if prov == "Tim":
+        return "Tim16"
+    if prov == "Fastweb":
+        return "Sky16NotInTarget" if s["IsNotValidForProviderTarget"] else "SkyMobile16"
+    if prov == "Sky":
+        if s["IsNotValidForProviderTarget"]:
+            return "Sky16NotInTarget"
+        return "SkyWifi16" if s["IsLandline"] else "SkyMobile16"
+    if prov in ("Iliad", "Tiscali", "Digi", "CoopVoce", "Lyca", "PosteMobile"):
+        return f"{prov}16"
+    return "Unknown16"
+
+
+# ── Costruzione report ───────────────────────────────────────────────────────
+
+def _category(s):
+    prov, kind = s["Provider"], s["PaymentKind"]
+    if prov in ("Wind", "Very") and kind in ("postpaid", "prepaid"):
+        return "mobile"
+    if prov == "Infostrada":
+        return "fisso"
+    if prov == "Sky":
+        return "sky_m" if s["IsMobile"] else "sky_nm"
+    return "altro"
+
+
+def build_report(conn, day):
+    day_int = int(day.strftime("%Y%m%d"))
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM Sales
+        WHERE Day = ? AND IsLatest_Revision = 1 AND IsDeleted = 0
+        ORDER BY DateTime
+    """, (day_int,))
+    rows = cur.fetchall()
+
+    sales = []
+    cat_totals = {c: {"count": 0, "mult": 0.0}
+                  for c in ("mobile", "fisso", "sky_nm", "sky_m", "altro")}
+    pos_totals, seller_totals = {}, {}
+    total_mult = 0.0
+
+    for s in rows:
+        mult = float(s["Contract_Multiplier"] or 0)
+        cat = _category(s)
+        cat_totals[cat]["count"] += 1
+        cat_totals[cat]["mult"] += mult
+        total_mult += mult
+        for key, bucket in ((s["POSCode"], pos_totals), (s["POSSeller"], seller_totals)):
+            k = key or "?"
+            bucket.setdefault(k, {"count": 0, "mult": 0.0})
+            bucket[k]["count"] += 1
+            bucket[k]["mult"] += mult
+
+        leasing = None
+        if _is_any_leasing(s):
+            leasing = {
+                "brand": s["LeasingBrand"],
+                "model": s["LeasingModel"],
+                "kind": s["Leasing"],
+                "value": s["Leasing_Price_Full"],
+            }
+
+        sales.append({
+            "time": (s["DateTime"] or "")[11:16],
+            "pos": s["POSCode"],
+            "seller": s["POSSeller"],
+            "customer": f"{s['Surname'] or ''} {s['Name'] or ''}".strip(),
+            "contract": s["ContractName"],
+            "options": s["OptionsMain"],
+            "provider": s["Provider"],
+            "kind": s["PaymentKind"],
+            "mult": mult,
+            "color": compute_color(s),
+            "icon": compute_icon(s),
+            "mnp": bool(s["IsMNP"]),
+            "business": bool(s["IsBusiness"]),
+            "landline": bool(s["IsLandline"]),
+            "fwa": bool(s["IsFixWirelessAccess"]),
+            "notInTarget": bool(s["IsNotValidForProviderTarget"]),
+            "recharge": s["RechargeValue"] if _has_recharge(s) else None,
+            "leasing": leasing,
+            "category": cat,
+        })
+
+    return {
+        "version": 1,
+        "reportDate": day.isoformat(),
+        "generatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "totals": {
+            "count": len(sales),
+            "mult": round(total_mult, 2),
+            "byCategory": cat_totals,
+            "byPos": pos_totals,
+            "bySeller": seller_totals,
+        },
+        "sales": sales,
+    }
+
+
+# ── Cifratura (AES-256-GCM + PBKDF2-SHA-256) ─────────────────────────────────
+
+def encrypt_report(report, password):
+    salt = os.urandom(16)
+    iv = os.urandom(12)
+    kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
+                     iterations=PBKDF2_ITERATIONS)
+    key = kdf.derive(password.encode("utf-8"))
+    plaintext = json.dumps(report, ensure_ascii=False).encode("utf-8")
+    ciphertext = AESGCM(key).encrypt(iv, plaintext, None)
+    b64 = lambda b: base64.b64encode(b).decode("ascii")
+    return {
+        "version": 1,
+        "algorithm": "AES-GCM",
+        "kdf": "PBKDF2-SHA-256",
+        "iterations": PBKDF2_ITERATIONS,
+        "salt": b64(salt),
+        "iv": b64(iv),
+        "ciphertext": b64(ciphertext),
+    }
+
+
+def get_password(cli_password):
+    if cli_password:
+        return cli_password
+    env = os.getenv("REPORT_PASSWORD")
+    if env:
+        return env
+    if PASSWORD_FILE.exists():
+        pw = PASSWORD_FILE.read_text(encoding="utf-8").strip()
+        if pw:
+            return pw
+    sys.exit("Password mancante: usa --password, REPORT_PASSWORD "
+             "o il file password.local.txt")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Genera il report vendite cifrato")
+    ap.add_argument("--date", help="Giorno del report (YYYY-MM-DD, default oggi)")
+    ap.add_argument("--password", help="Password di cifratura")
+    ap.add_argument("--plain", metavar="FILE",
+                    help="DEBUG: salva anche il JSON in chiaro (non committare!)")
+    args = ap.parse_args()
+
+    day = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
+    password = get_password(args.password)
+
+    conn = connect_pagodealer()
+    try:
+        report = build_report(conn, day)
+    finally:
+        conn.close()
+
+    if args.plain:
+        Path(args.plain).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"⚠️  JSON in chiaro scritto in {args.plain} (NON committare)")
+
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT_FILE.write_text(json.dumps(encrypt_report(report, password)),
+                           encoding="utf-8")
+    print(f"Report {day.isoformat()}: {report['totals']['count']} vendite, "
+          f"{report['totals']['mult']:.2f} punti → {OUTPUT_FILE}")
+
+
+if __name__ == "__main__":
+    main()
