@@ -4,6 +4,15 @@ rem Uso: publish.bat [argomenti per generate_report.py, es. --force]
 setlocal
 cd /d "%~dp0"
 
+if not exist password.local.txt (
+    type nul > password.local.txt
+    echo password.local.txt non trovato: creato vuoto e aperto per la modifica.
+    echo Inserisci la password, salva, chiudi l'editor e rilancia publish.bat.
+    start "" "password.local.txt"
+    pause
+    exit /b 1
+)
+
 python -X utf8 generate_report.py %*
 if errorlevel 1 (
     echo.
