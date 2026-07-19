@@ -499,6 +499,37 @@ def encrypt_report(report, password):
     }
 
 
+def decrypt_report(payload, password):
+    """Inverso di encrypt_report; None su qualunque errore (password
+    ruotata, file corrotto, formato inatteso)."""
+    try:
+        salt = base64.b64decode(payload["salt"])
+        iv = base64.b64decode(payload["iv"])
+        ciphertext = base64.b64decode(payload["ciphertext"])
+        kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
+                         iterations=payload["iterations"])
+        key = kdf.derive(password.encode("utf-8"))
+        return json.loads(AESGCM(key).decrypt(iv, ciphertext, None))
+    except Exception:
+        return None
+
+
+def report_is_unchanged(report, password):
+    """True se OUTPUT_FILE contiene già lo stesso report (generatedAt
+    escluso): in quel caso non c'è nulla da ricifrare né da pushare."""
+    if not OUTPUT_FILE.exists():
+        return False
+    try:
+        payload = json.loads(OUTPUT_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    old = decrypt_report(payload, password)
+    if old is None:
+        return False
+    strip = lambda r: {k: v for k, v in r.items() if k != "generatedAt"}
+    return strip(old) == strip(report)
+
+
 def get_password(cli_password):
     if cli_password:
         return cli_password
@@ -519,6 +550,8 @@ def main():
     ap.add_argument("--password", help="Password di cifratura")
     ap.add_argument("--plain", metavar="FILE",
                     help="DEBUG: salva anche il JSON in chiaro (non committare!)")
+    ap.add_argument("--force", action="store_true",
+                    help="Riscrive il report anche se i dati sono invariati")
     args = ap.parse_args()
 
     day = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
@@ -542,6 +575,11 @@ def main():
         Path(args.plain).write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"⚠️  JSON in chiaro scritto in {args.plain} (NON committare)")
+
+    if not args.force and report_is_unchanged(report, password):
+        print(f"Nessuna variazione rispetto a {OUTPUT_FILE.name}: "
+              "report invariato, niente da committare (usa --force per riscriverlo)")
+        return
 
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_FILE.write_text(json.dumps(encrypt_report(report, password)),
