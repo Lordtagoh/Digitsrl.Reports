@@ -133,19 +133,38 @@ main {
     padding: 16px 16px 32px;
 }
 
-.report-header h1 { font-size: 26px; margin: 8px 0 2px; }
+.month-title { font-size: 26px; margin: 8px 0 12px; }
+
+.report-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 16px 0 16px;
+}
+
+.report-header h2 { font-size: 22px; margin: 0; }
+
+.report-meta { text-align: right; }
 
 .report-date {
     color: var(--ink-secondary);
     font-size: 15px;
-    margin: 0 0 16px;
+    margin: 0;
     text-transform: capitalize;
+}
+
+.report-updated {
+    color: var(--ink-muted);
+    font-size: 12px;
+    margin: 2px 0 0;
 }
 
 /* KPI: hero numbers */
 .kpi-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 10px;
     margin-bottom: 10px;
 }
@@ -153,10 +172,15 @@ main {
 .kpi {
     background: var(--surface);
     border-radius: var(--radius);
-    padding: 14px 16px;
+    padding: 14px 12px;
 }
 
-.kpi .kpi-value { font-size: 30px; font-weight: 700; line-height: 1.1; }
+.kpi .kpi-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
+
+/* Stessi colori della dashboard (Attuale DB) */
+.kpi .kpi-value.kpi-mobile { color: #fb923c; }
+.kpi .kpi-value.kpi-fisso { color: #34d399; }
+.kpi .kpi-value.kpi-sky { color: #0ea5e9; }
 
 .kpi .kpi-label {
     font-size: 13px;

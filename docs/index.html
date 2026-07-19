@@ -8,7 +8,7 @@
     <meta name="color-scheme" content="light dark">
     <meta name="robots" content="noindex, nofollow">
     <title>Report Vendite</title>
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -44,12 +44,16 @@
 
     <!-- Report -->
     <main id="report" class="hidden">
-        <header class="report-header">
-            <h1>Vendite di oggi</h1>
-            <p id="report-date" class="report-date"></p>
-        </header>
-
+        <h1 id="month-title" class="month-title"></h1>
         <section id="kpi-row" class="kpi-row"></section>
+
+        <header class="report-header">
+            <h2 id="report-title">Vendite di oggi</h2>
+            <div class="report-meta">
+                <p id="report-date" class="report-date"></p>
+                <p id="report-updated" class="report-updated"></p>
+            </div>
+        </header>
         <section id="category-summary" class="chips-section"></section>
         <section id="pos-summary" class="mini-summary"></section>
         <section id="seller-summary" class="mini-summary"></section>
@@ -62,6 +66,6 @@
         </footer>
     </main>
 
-    <script src="report.js?v=2"></script>
+    <script src="report.js?v=10"></script>
 </body>
 </html>

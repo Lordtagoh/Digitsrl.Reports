@@ -136,19 +136,35 @@ function renderSaleCard(sale) {
 
 function renderReport(report) {
     const date = new Date(report.reportDate + 'T00:00:00');
-    $('report-date').textContent = date.toLocaleDateString('it-IT', {
-        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    });
+    const month = date.toLocaleDateString('it-IT', { month: 'long' });
+    $('month-title').textContent =
+        `Vendite di ${month.charAt(0).toUpperCase()}${month.slice(1)} ` +
+        `${date.getFullYear()}`;
 
-    // KPI
+    const weekday = date.toLocaleDateString('it-IT', { weekday: 'long' });
+    const weekdayCap = `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}`;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysAgo = Math.round((today - date) / 86400000);
+    const when = daysAgo <= 0 ? 'di oggi' : daysAgo === 1 ? 'di ieri' : 'di';
+    $('report-title').textContent = `Vendite ${when} ${weekdayCap}`;
+    $('report-date').textContent = date.toLocaleDateString('it-IT', {
+        day: 'numeric', month: 'long', year: 'numeric',
+    });
+    $('report-updated').textContent =
+        `Aggiornato alle ${(report.generatedAt || '').slice(11, 16)}`;
+
+    // KPI: totali "Attuale (DB)" del mese, come la dashboard
     const kpis = $('kpi-row');
     kpis.textContent = '';
-    for (const [value, label] of [
-        [String(report.totals.count), 'Vendite'],
-        [fmtMult(report.totals.mult), 'Punti'],
+    const mtd = report.monthToDate || {};
+    for (const [value, label, cls] of [
+        [fmtMult(mtd.mobile ?? 0), 'Wind Mobile', 'kpi-mobile'],
+        [fmtMult(mtd.fisso ?? 0), 'Infostrada', 'kpi-fisso'],
+        [fmtMult(mtd.sky ?? 0), 'Sky', 'kpi-sky'],
     ]) {
         const tile = el('div', 'kpi');
-        tile.appendChild(el('div', 'kpi-value', value));
+        tile.appendChild(el('div', `kpi-value ${cls}`, value));
         tile.appendChild(el('div', 'kpi-label', label));
         kpis.appendChild(tile);
     }

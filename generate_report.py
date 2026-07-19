@@ -206,6 +206,30 @@ def compute_icon(s):
 
 # ── Costruzione report ───────────────────────────────────────────────────────
 
+# Opzioni da non mostrare mai nel report (benefit standard, zero informazione)
+IGNORED_OPTION_PREFIXES = ("giga illimitati",)
+
+
+def _display_options(provider, options_main):
+    """Opzione da mostrare sulla card della vendita.
+
+    Infostrada: OptionsMain è un testo unico con le opzioni separate da " - "
+    e una coda legale ("Per termini e condizioni…") attaccata all'ultima:
+    mostra la prima opzione non ignorata, senza coda.
+    Altri provider: OptionsMain è già una singola opzione.
+    """
+    if not options_main:
+        return options_main
+    if provider == "Infostrada":
+        parts = [p.split(" Per termini")[0].strip().rstrip(":").strip()
+                 for p in options_main.split(" - ")]
+        parts = [p for p in parts if p]
+    else:
+        parts = [options_main]
+    return next((p for p in parts
+                 if not p.lower().startswith(IGNORED_OPTION_PREFIXES)), None)
+
+
 def _category(s):
     prov, kind = s["Provider"], s["PaymentKind"]
     if prov in ("Wind", "Very") and kind in ("postpaid", "prepaid"):
@@ -215,6 +239,41 @@ def _category(s):
     if prov == "Sky":
         return "sky_m" if s["IsMobile"] else "sky_nm"
     return "altro"
+
+
+def month_to_date_totals(conn, day):
+    """Totali "Attuale (DB)" come generate_dashboard.py (WindTreTargetImporter):
+    somma di Contract_Multiplier per categoria dal 1° del mese al giorno del
+    report, raggruppando per DATE(DateTime); None se nessuna vendita.
+    Sky = sky non-mobile + sky mobile.
+    """
+    filters = {"mobile": FILTER_MOBILE, "fisso": FILTER_FISSO,
+               "sky_nm": FILTER_SKY_NON_MOBILE, "sky_m": FILTER_SKY_MOBILE}
+    cases = ",".join(
+        f"SUM(CASE WHEN {f} THEN Contract_Multiplier ELSE 0 END),"
+        f"COUNT(CASE WHEN {f} THEN 1 END)"
+        for f in filters.values())
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT {cases} FROM Sales WHERE DATE(DateTime) BETWEEN ? AND ?",
+        (day.replace(day=1).isoformat(), day.isoformat()))
+    row = cur.fetchone()
+    t = {c: (row[i * 2] if row[i * 2 + 1] else None)
+         for i, c in enumerate(filters)}
+    sky = (None if t["sky_nm"] is None and t["sky_m"] is None
+           else (t["sky_nm"] or 0) + (t["sky_m"] or 0))
+    return {"mobile": t["mobile"], "fisso": t["fisso"], "sky": sky}
+
+
+def last_day_with_sales(conn, upto):
+    """Ultimo giorno (<= upto) con almeno una vendita, o None."""
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT MAX(Day) FROM Sales
+        WHERE Day <= ? AND IsLatest_Revision = 1 AND IsDeleted = 0
+    """, (int(upto.strftime("%Y%m%d")),))
+    row = cur.fetchone()[0]
+    return dt.datetime.strptime(str(row), "%Y%m%d").date() if row else None
 
 
 def build_report(conn, day):
@@ -265,13 +324,19 @@ def build_report(conn, day):
                 "value": s["Leasing_Price_Full"],
             }
 
+        contract = s["ContractName"]
+        options = _display_options(s["Provider"], s["OptionsMain"])
+        # Wind: "New Basic" è il nome contratto generico, non dice nulla.
+        if s["Provider"] == "Wind" and contract == "New Basic":
+            contract = None
+
         sales.append({
             "time": (s["DateTime"] or "")[11:16],
             "pos": s["POSCode"],
             "seller": s["POSSeller"],
             "customer": f"{s['Surname'] or ''} {s['Name'] or ''}".strip(),
-            "contract": s["ContractName"],
-            "options": s["OptionsMain"],
+            "contract": contract,
+            "options": options,
             "provider": s["Provider"],
             "kind": s["PaymentKind"],
             "mult": mult,
@@ -291,6 +356,7 @@ def build_report(conn, day):
         "version": 1,
         "reportDate": day.isoformat(),
         "generatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "monthToDate": month_to_date_totals(conn, day),
         "totals": {
             "count": len(sales),
             "mult": round(total_mult, 2),
@@ -351,6 +417,14 @@ def main():
 
     conn = connect_pagodealer()
     try:
+        # Senza --date: se oggi non ci sono vendite, usa l'ultimo
+        # giorno che ne ha (es. la domenica mostra il sabato).
+        if not args.date:
+            fallback = last_day_with_sales(conn, day)
+            if fallback and fallback != day:
+                print(f"Nessuna vendita il {day.isoformat()}: uso l'ultimo "
+                      f"giorno con vendite ({fallback.isoformat()})")
+                day = fallback
         report = build_report(conn, day)
     finally:
         conn.close()
