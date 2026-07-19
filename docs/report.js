@@ -80,6 +80,16 @@ function renderSummaryGroup(container, title, entries) {
         item.appendChild(el('b', '', name));
         item.appendChild(document.createTextNode(
             ` ${v.count} (${fmtMult(v.mult)} pt)`));
+        if (v.icons && v.icons.length) {
+            const icons = el('span', 'mini-icons');
+            for (const ic of v.icons) {
+                const img = document.createElement('img');
+                img.src = `img/providers/${ic}.png`;
+                img.alt = '';
+                icons.appendChild(img);
+            }
+            item.appendChild(icons);
+        }
         container.appendChild(item);
     }
 }

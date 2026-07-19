@@ -223,9 +223,18 @@ def build_report(conn, day):
     cur.execute("""
         SELECT * FROM Sales
         WHERE Day = ? AND IsLatest_Revision = 1 AND IsDeleted = 0
-        ORDER BY DateTime
     """, (day_int,))
     rows = cur.fetchall()
+
+    # Ordinamento come la griglia del gestionale (ResultsOfDB.cs) ma con le
+    # landline in cima: poi provider Z→A (Wind in cima), postpaid prima di
+    # prepaid, energia in fondo; a parità, vendita più recente prima.
+    # Passate stabili dal criterio meno significativo al più significativo.
+    rows.sort(key=lambda s: s["DateTime"] or "", reverse=True)
+    rows.sort(key=lambda s: (s["PaymentKind"] or "").lower())
+    rows.sort(key=lambda s: (s["Provider"] or "").lower(), reverse=True)
+    rows.sort(key=lambda s: bool(s["IsLandline"]), reverse=True)
+    rows.sort(key=lambda s: bool(s["IsEnergy"]))
 
     sales = []
     cat_totals = {c: {"count": 0, "mult": 0.0}
@@ -236,14 +245,16 @@ def build_report(conn, day):
     for s in rows:
         mult = float(s["Contract_Multiplier"] or 0)
         cat = _category(s)
+        icon = compute_icon(s)
         cat_totals[cat]["count"] += 1
         cat_totals[cat]["mult"] += mult
         total_mult += mult
         for key, bucket in ((s["POSCode"], pos_totals), (s["POSSeller"], seller_totals)):
             k = key or "?"
-            bucket.setdefault(k, {"count": 0, "mult": 0.0})
+            bucket.setdefault(k, {"count": 0, "mult": 0.0, "icons": []})
             bucket[k]["count"] += 1
             bucket[k]["mult"] += mult
+            bucket[k]["icons"].append(icon)
 
         leasing = None
         if _is_any_leasing(s):
@@ -265,7 +276,7 @@ def build_report(conn, day):
             "kind": s["PaymentKind"],
             "mult": mult,
             "color": compute_color(s),
-            "icon": compute_icon(s),
+            "icon": icon,
             "mnp": bool(s["IsMNP"]),
             "business": bool(s["IsBusiness"]),
             "landline": bool(s["IsLandline"]),

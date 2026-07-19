@@ -213,6 +213,21 @@ main {
 .mini-summary .mini-item { color: var(--ink-secondary); }
 .mini-summary .mini-item b { color: var(--ink); font-weight: 600; }
 
+.mini-summary .mini-icons {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.mini-summary .mini-icons img {
+    height: 16px;
+    width: auto;
+    display: block;
+}
+
 /* ── Lista vendite ────────────────────────────────────────────── */
 
 .sales-list { margin-top: 16px; }
