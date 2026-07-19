@@ -39,6 +39,12 @@ if errorlevel 1 (
     exit /b 1
 )
 git push
+if errorlevel 1 (
+    echo.
+    echo Push fallito: il commit locale e' stato creato ma non pubblicato.
+    pause
+    exit /b 1
+)
 echo.
 echo Report pubblicato.
 pause

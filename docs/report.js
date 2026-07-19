@@ -26,6 +26,13 @@ const $ = (id) => document.getElementById(id);
 
 /* ── Crittografia ────────────────────────────────────────────── */
 
+const EXPECTED_PAYLOAD = Object.freeze({
+    version: 1,
+    algorithm: 'AES-GCM',
+    kdf: 'PBKDF2-SHA-256',
+    iterations: 600000,
+});
+
 function b64ToBytes(b64) {
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
@@ -33,14 +40,33 @@ function b64ToBytes(b64) {
     return bytes;
 }
 
+function validateEncryptedPayload(payload) {
+    if (!payload || typeof payload !== 'object')
+        throw new Error('Payload non valido');
+    for (const [key, value] of Object.entries(EXPECTED_PAYLOAD)) {
+        if (payload[key] !== value)
+            throw new Error(`Parametro payload non supportato: ${key}`);
+    }
+    for (const key of ['salt', 'iv', 'ciphertext']) {
+        if (typeof payload[key] !== 'string' || !payload[key])
+            throw new Error(`Campo payload mancante o non valido: ${key}`);
+    }
+
+    const salt = b64ToBytes(payload.salt);
+    const iv = b64ToBytes(payload.iv);
+    if (salt.length !== 16 || iv.length !== 12)
+        throw new Error('Dimensioni payload non valide');
+}
+
 async function decryptReport(payload, password) {
+    validateEncryptedPayload(payload);
     const baseKey = await crypto.subtle.importKey(
         'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
     const key = await crypto.subtle.deriveKey(
         {
             name: 'PBKDF2',
             salt: b64ToBytes(payload.salt),
-            iterations: payload.iterations,
+            iterations: EXPECTED_PAYLOAD.iterations,
             hash: 'SHA-256',
         },
         baseKey,

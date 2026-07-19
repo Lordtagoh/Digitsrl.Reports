@@ -499,15 +499,34 @@ def encrypt_report(report, password):
     }
 
 
+def validate_encrypted_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("payload non valido")
+    if payload.get("version") != 1:
+        raise ValueError("versione payload non supportata")
+    if payload.get("algorithm") != "AES-GCM":
+        raise ValueError("algoritmo payload non supportato")
+    if payload.get("kdf") != "PBKDF2-SHA-256":
+        raise ValueError("KDF payload non supportato")
+    if payload.get("iterations") != PBKDF2_ITERATIONS:
+        raise ValueError("iterazioni PBKDF2 non supportate")
+    for field in ("salt", "iv", "ciphertext"):
+        if not isinstance(payload.get(field), str):
+            raise ValueError(f"campo payload mancante o non valido: {field}")
+
+
 def decrypt_report(payload, password):
     """Inverso di encrypt_report; None su qualunque errore (password
     ruotata, file corrotto, formato inatteso)."""
     try:
-        salt = base64.b64decode(payload["salt"])
-        iv = base64.b64decode(payload["iv"])
-        ciphertext = base64.b64decode(payload["ciphertext"])
+        validate_encrypted_payload(payload)
+        salt = base64.b64decode(payload["salt"], validate=True)
+        iv = base64.b64decode(payload["iv"], validate=True)
+        ciphertext = base64.b64decode(payload["ciphertext"], validate=True)
+        if len(salt) != 16 or len(iv) != 12 or not ciphertext:
+            raise ValueError("dimensioni payload non valide")
         kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
-                         iterations=payload["iterations"])
+                         iterations=PBKDF2_ITERATIONS)
         key = kdf.derive(password.encode("utf-8"))
         return json.loads(AESGCM(key).decrypt(iv, ciphertext, None))
     except Exception:
