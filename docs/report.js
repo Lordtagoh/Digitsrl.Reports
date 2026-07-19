@@ -158,14 +158,16 @@ function renderReport(report) {
     const kpis = $('kpi-row');
     kpis.textContent = '';
     const mtd = report.monthToDate || {};
-    for (const [value, label, cls] of [
-        [fmtMult(mtd.mobile ?? 0), 'Wind Mobile', 'kpi-mobile'],
-        [fmtMult(mtd.fisso ?? 0), 'Infostrada', 'kpi-fisso'],
-        [fmtMult(mtd.sky ?? 0), 'Sky', 'kpi-sky'],
+    for (const [value, label, cls, cat] of [
+        [fmtMult(mtd.mobile ?? 0), 'Wind Mobile', 'kpi-mobile', 'mobile'],
+        [fmtMult(mtd.fisso ?? 0), 'Infostrada', 'kpi-fisso', 'fisso'],
+        [fmtMult(mtd.sky ?? 0), 'Sky', 'kpi-sky', 'sky'],
     ]) {
         const tile = el('div', 'kpi');
         tile.appendChild(el('div', `kpi-value ${cls}`, value));
         tile.appendChild(el('div', 'kpi-label', label));
+        if (report.monthChart)
+            tile.addEventListener('click', () => openChart(cat, label, report));
         kpis.appendChild(tile);
     }
 
@@ -201,6 +203,127 @@ function renderReport(report) {
     $('unlock-screen').classList.add('hidden');
     $('report').classList.remove('hidden');
 }
+
+/* ── Grafico mensile (stile dashboard) ───────────────────────── */
+
+let monthChart = null;
+
+// Colori identici a templates/dashboard.html del progetto dashboard
+const CHART_COLORS = {
+    mobile: { pdf: '#f97316', db: '#fb923c' },
+    fisso: { pdf: '#10b981', db: '#34d399' },
+    skyNm: '#38bdf8', skyTot: '#0284c7',
+    soglia: '#ef4444',
+};
+
+function openChart(cat, label, report) {
+    const mc = report.monthChart;
+    if (!mc || typeof Chart === 'undefined') return;
+
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const tickColor = dark ? '#9aa5b9' : '#5b6472';
+    const gridColor = dark ? 'rgba(45, 55, 72, 0.5)' : 'rgba(0, 0, 0, 0.08)';
+    const legendColor = dark ? '#e8edf5' : '#1c1c1e';
+
+    const soglie = (mc.soglie && mc.soglie[cat]) || { values: [] };
+    const sogliaDash = soglie.projected ? [8, 4] : [0];
+    const datasets = [];
+
+    if (cat === 'sky') {
+        datasets.push({
+            label: 'Non Mobile', data: mc.skyNm,
+            borderColor: CHART_COLORS.skyNm,
+            backgroundColor: 'rgba(56, 189, 248, 0.35)',
+            borderWidth: 2, fill: 'origin', tension: 0.4,
+            pointRadius: 0, spanGaps: true,
+        });
+        datasets.push({
+            label: 'Mobile', data: mc.sky,
+            borderColor: CHART_COLORS.skyTot,
+            backgroundColor: 'rgba(2, 132, 199, 0.35)',
+            borderWidth: 2, fill: '-1', tension: 0.4,
+            pointRadius: 0, spanGaps: true,
+        });
+    } else {
+        const colors = CHART_COLORS[cat];
+        if (mc.pdf && mc.pdf[cat] && mc.pdf[cat].some((v) => v !== null)) {
+            datasets.push({
+                label: `${label} (PDF)`, data: mc.pdf[cat],
+                borderColor: colors.pdf,
+                backgroundColor: 'transparent',
+                borderWidth: 3, fill: false, tension: 0.4,
+                pointRadius: 4, spanGaps: true,
+            });
+        }
+        datasets.push({
+            label: `${label} (DB)`, data: mc[cat],
+            borderColor: colors.db,
+            backgroundColor: 'transparent',
+            borderWidth: 2, borderDash: [5, 5], fill: false,
+            tension: 0.4, pointRadius: 0, spanGaps: true,
+        });
+    }
+
+    for (const [i, soglia] of soglie.values.entries()) {
+        datasets.push({
+            label: `Soglia ${i + 1}`,
+            data: Array(mc.labels.length).fill(soglia),
+            borderColor: CHART_COLORS.soglia,
+            backgroundColor: 'transparent',
+            borderWidth: 2, borderDash: sogliaDash,
+            fill: false, pointRadius: 0, tension: 0,
+        });
+    }
+
+    const suffix = soglie.projected ? ' — soglie proiettate' : '';
+    $('chart-modal-title').textContent = `${label}${suffix}`;
+
+    if (monthChart) monthChart.destroy();
+    monthChart = new Chart($('month-chart').getContext('2d'), {
+        type: 'line',
+        data: { labels: mc.labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: cat === 'sky' || datasets.length > soglie.values.length + 1,
+                    position: 'top',
+                    labels: {
+                        color: legendColor,
+                        filter: (item) => !item.text.startsWith('Soglia'),
+                        font: { size: 12 },
+                    },
+                },
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: gridColor },
+                    ticks: { color: tickColor },
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { color: tickColor },
+                },
+            },
+        },
+    });
+    $('chart-modal').classList.remove('hidden');
+}
+
+function closeChart() {
+    $('chart-modal').classList.add('hidden');
+    if (monthChart) {
+        monthChart.destroy();
+        monthChart = null;
+    }
+}
+
+$('chart-modal-close').addEventListener('click', closeChart);
+$('chart-modal').addEventListener('click', (ev) => {
+    if (ev.target === $('chart-modal')) closeChart();
+});
 
 /* ── Flusso di sblocco ───────────────────────────────────────── */
 

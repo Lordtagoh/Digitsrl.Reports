@@ -182,6 +182,56 @@ main {
 .kpi .kpi-value.kpi-fisso { color: #34d399; }
 .kpi .kpi-value.kpi-sky { color: #0ea5e9; }
 
+.kpi { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.kpi:active { opacity: 0.75; }
+
+/* Modal grafico mensile */
+.chart-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    padding-top: calc(16px + env(safe-area-inset-top));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.chart-modal-box {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 14px 16px 16px;
+    width: 100%;
+    max-width: 640px;
+}
+
+.chart-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.chart-modal-head h3 { font-size: 17px; margin: 0; }
+
+.chart-modal-close {
+    border: none;
+    background: none;
+    color: var(--ink-secondary);
+    font-size: 20px;
+    line-height: 1;
+    padding: 6px;
+    cursor: pointer;
+}
+
+.chart-wrap {
+    position: relative;
+    height: min(340px, 55vh);
+}
+
 .kpi .kpi-label {
     font-size: 13px;
     color: var(--ink-secondary);

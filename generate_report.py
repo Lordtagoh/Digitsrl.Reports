@@ -36,6 +36,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_FILE = SCRIPT_DIR / "docs" / "data" / "report.enc.json"
 PASSWORD_FILE = SCRIPT_DIR / "password.local.txt"
 
+# avanzamenti.db del progetto dashboard (repo gemello): soglie e punti PDF
+AVANZAMENTI_DB = (SCRIPT_DIR.parent /
+                  "Digitsrl.Provider.Dashboard.WindTreTargetImporter" /
+                  "avanzamenti.db")
+
 PBKDF2_ITERATIONS = 600_000
 
 # Filtri categoria allineati a common.py del progetto WindTreTargetImporter
@@ -265,6 +270,109 @@ def month_to_date_totals(conn, day):
     return {"mobile": t["mobile"], "fisso": t["fisso"], "sky": sky}
 
 
+def _mese_key(mese_anno):
+    """Chiave di ordinamento per 'MM/YY' (come common.py mese_to_number)."""
+    mm, yy = mese_anno.split("/")
+    return int(yy) * 100 + int(mm)
+
+
+def _soglie_for_month(cur, table, mese_anno):
+    """Soglie del mese dalla tabella indicata; se assenti le proietta dal mese
+    più vicino che precede (fallback: successivo), come generate_dashboard.py.
+    Ritorna (valori, proiettate)."""
+    cur.execute(f"SELECT valore_soglia FROM {table} "
+                "WHERE mese_anno = ? ORDER BY numero_soglia", (mese_anno,))
+    values = [r[0] for r in cur.fetchall()]
+    if values:
+        return values, False
+    cur.execute(f"SELECT DISTINCT mese_anno FROM {table}")
+    mesi = [r[0] for r in cur.fetchall()]
+    target = _mese_key(mese_anno)
+    prima = [m for m in mesi if _mese_key(m) < target]
+    dopo = [m for m in mesi if _mese_key(m) > target]
+    ref = (max(prima, key=_mese_key) if prima
+           else min(dopo, key=_mese_key) if dopo else None)
+    if ref is None:
+        return [], False
+    cur.execute(f"SELECT valore_soglia FROM {table} "
+                "WHERE mese_anno = ? ORDER BY numero_soglia", (ref,))
+    return [r[0] for r in cur.fetchall()], True
+
+
+def month_chart_data(conn, day):
+    """Dati per il grafico mensile in stile dashboard: cumulate giornaliere
+    per categoria da PagoDealer (stessi filtri di "Attuale (DB)"), punti PDF
+    del mese e soglie (reali o proiettate) da avanzamenti.db."""
+    start = day.replace(day=1)
+    filters = (FILTER_MOBILE, FILTER_FISSO,
+               FILTER_SKY_NON_MOBILE, FILTER_SKY_MOBILE)
+    cases = ",".join(
+        f"SUM(CASE WHEN {f} THEN Contract_Multiplier ELSE 0 END)"
+        for f in filters)
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT DATE(DateTime) AS g, {cases} FROM Sales "
+        "WHERE DATE(DateTime) BETWEEN ? AND ? GROUP BY g",
+        (start.isoformat(), day.isoformat()))
+    per_day = {r[0]: r[1:] for r in cur.fetchall()}
+
+    labels, series = [], {"mobile": [], "fisso": [], "skyNm": [], "skyM": [],
+                          "sky": []}
+    cum = [0.0, 0.0, 0.0, 0.0]
+    d = start
+    while d <= day:
+        vals = per_day.get(d.isoformat())
+        if vals:
+            cum = [c + (v or 0) for c, v in zip(cum, vals)]
+        labels.append(str(d.day))
+        series["mobile"].append(round(cum[0], 2))
+        series["fisso"].append(round(cum[1], 2))
+        series["skyNm"].append(round(cum[2], 2))
+        series["skyM"].append(round(cum[3], 2))
+        series["sky"].append(round(cum[2] + cum[3], 2))
+        d += dt.timedelta(days=1)
+
+    chart = {"labels": labels, **series, "pdf": None,
+             "soglie": {"mobile": {"values": [], "projected": False},
+                        "fisso": {"values": [], "projected": False},
+                        "sky": {"values": [], "projected": False}}}
+
+    if not AVANZAMENTI_DB.exists():
+        return chart
+
+    aconn = sqlite3.connect(f"file:{AVANZAMENTI_DB.as_posix()}?mode=ro",
+                            uri=True)
+    try:
+        acur = aconn.cursor()
+        mese_anno = f"{day.month:02d}/{str(day.year)[2:]}"
+        for cat, table in (("mobile", "soglie_mobile"),
+                           ("fisso", "soglie_fisso"), ("sky", "soglie_sky")):
+            values, projected = _soglie_for_month(acur, table, mese_anno)
+            chart["soglie"][cat] = {"values": values, "projected": projected}
+
+        # Punti PDF del mese, allineati sulle label giornaliere (null altrove)
+        acur.execute(
+            "SELECT data_aggiornamento, punti_mobile_actual, "
+            "punti_fisso_actual FROM avanzamenti WHERE mese_anno = ? "
+            "ORDER BY data_aggiornamento", (mese_anno,))
+        rows = acur.fetchall()
+        if rows:
+            pdf_mob = [None] * len(labels)
+            pdf_fis = [None] * len(labels)
+            for data_str, mob, fis in rows:
+                try:
+                    day_idx = int(data_str.split("/")[0]) - 1
+                except (ValueError, AttributeError):
+                    continue
+                if 0 <= day_idx < len(labels):
+                    pdf_mob[day_idx] = mob
+                    pdf_fis[day_idx] = fis
+            chart["pdf"] = {"mobile": pdf_mob, "fisso": pdf_fis}
+    finally:
+        aconn.close()
+    return chart
+
+
 def last_day_with_sales(conn, upto):
     """Ultimo giorno (<= upto) con almeno una vendita, o None."""
     cur = conn.cursor()
@@ -357,6 +465,7 @@ def build_report(conn, day):
         "reportDate": day.isoformat(),
         "generatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "monthToDate": month_to_date_totals(conn, day),
+        "monthChart": month_chart_data(conn, day),
         "totals": {
             "count": len(sales),
             "mult": round(total_mult, 2),
