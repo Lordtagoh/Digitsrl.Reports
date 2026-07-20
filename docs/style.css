@@ -164,7 +164,7 @@ main {
 /* KPI: hero numbers */
 .kpi-row {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 10px;
     margin-bottom: 10px;
 }
@@ -175,15 +175,20 @@ main {
     padding: 14px 12px;
 }
 
+@media (min-width: 560px) {
+    .kpi-row { grid-template-columns: repeat(4, 1fr); }
+}
+
 .kpi .kpi-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
 
 /* Stessi colori della dashboard (Attuale DB) */
 .kpi .kpi-value.kpi-mobile { color: #fb923c; }
 .kpi .kpi-value.kpi-fisso { color: #34d399; }
 .kpi .kpi-value.kpi-sky { color: #0ea5e9; }
+.kpi .kpi-value.kpi-energy { color: #ca8a04; }
 
-.kpi { cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.kpi:active { opacity: 0.75; }
+.kpi.clickable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.kpi.clickable:active { opacity: 0.75; }
 
 /* Modal grafico mensile */
 .chart-modal {
@@ -237,6 +242,48 @@ main {
     color: var(--ink-secondary);
     margin-top: 2px;
 }
+
+.kpi-comparison {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--divider);
+}
+
+.kpi-comparison-title {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-muted);
+    margin-bottom: 4px;
+}
+
+.comparisons-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+}
+
+.kpi-comparison-line {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.mom-positive { color: #22c55e; }
+.mom-negative { color: #ef4444; }
+.yoy-positive { color: #0891b2; }
+.yoy-negative { color: #f87171; }
+.avg-positive { color: #8b5cf6; }
+.avg-negative { color: #db2777; }
 
 /* Categorie */
 .chips-section {

@@ -21,6 +21,7 @@ Uso:
 
 import argparse
 import base64
+import calendar
 import datetime as dt
 import json
 import os
@@ -49,6 +50,7 @@ FILTER_MOBILE = ("Provider IN ('Wind', 'Very') "
 FILTER_FISSO = "Provider = 'Infostrada'"
 FILTER_SKY_NON_MOBILE = "Provider = 'Sky' AND IsMobile = 0"
 FILTER_SKY_MOBILE = "Provider = 'Sky' AND IsMobile = 1"
+FILTER_ENERGY = "IsEnergy = 1"
 
 
 # ── PagoDealer.db (sola lettura) ─────────────────────────────────────────────
@@ -258,17 +260,102 @@ def month_to_date_totals(conn, day):
         f"SUM(CASE WHEN {f} THEN Contract_Multiplier ELSE 0 END),"
         f"COUNT(CASE WHEN {f} THEN 1 END)"
         for f in filters.values())
+    cases = f"{cases},COUNT(CASE WHEN {FILTER_ENERGY} THEN 1 END)"
     cur = conn.cursor()
     cur.execute(
         f"SELECT {cases} FROM Sales WHERE DATE(DateTime) BETWEEN ? AND ?",
         (day.replace(day=1).isoformat(), day.isoformat()))
     row = cur.fetchone()
+    energy_idx = len(filters) * 2
     t = {c: (row[i * 2] if row[i * 2 + 1] else None)
          for i, c in enumerate(filters)}
     sky = (None if t["sky_nm"] is None and t["sky_m"] is None
            else (t["sky_nm"] or 0) + (t["sky_m"] or 0))
-    return {"mobile": t["mobile"], "fisso": t["fisso"], "sky": sky}
+    return {"mobile": t["mobile"], "fisso": t["fisso"], "sky": sky,
+            "energy": row[energy_idx] or 0}
 
+
+def _month_label(year, month):
+    return f"{month:02d}/{str(year)[2:]}"
+
+
+def _prev_month(year, month):
+    return (year - 1, 12) if month == 1 else (year, month - 1)
+
+
+def _range_totals(conn, start, end):
+    """Totali DB per categoria nell'intervallo indicato, con la stessa
+    semantica NULL/None di month_to_date_totals."""
+    filters = {"mobile": FILTER_MOBILE, "fisso": FILTER_FISSO,
+               "sky_nm": FILTER_SKY_NON_MOBILE, "sky_m": FILTER_SKY_MOBILE}
+    cases = ",".join(
+        f"SUM(CASE WHEN {f} THEN Contract_Multiplier ELSE 0 END),"
+        f"COUNT(CASE WHEN {f} THEN 1 END)"
+        for f in filters.values())
+    cases = f"{cases},COUNT(CASE WHEN {FILTER_ENERGY} THEN 1 END)"
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT {cases} FROM Sales WHERE DATE(DateTime) BETWEEN ? AND ?",
+        (start.isoformat(), end.isoformat()))
+    row = cur.fetchone()
+    energy_idx = len(filters) * 2
+    totals = {c: (row[i * 2] if row[i * 2 + 1] else None)
+              for i, c in enumerate(filters)}
+    totals["energy"] = row[energy_idx] or 0
+    return totals
+
+
+def _month_to_day_totals(conn, year, month, day):
+    _, last_day = calendar.monthrange(year, month)
+    end = dt.date(year, month, min(day, last_day))
+    return _range_totals(conn, dt.date(year, month, 1), end)
+
+
+def _sky_total(totals):
+    if totals["sky_nm"] is None and totals["sky_m"] is None:
+        return None
+    return (totals["sky_nm"] or 0) + (totals["sky_m"] or 0)
+
+
+def _comparison_values(totals):
+    return {
+        "mobile": totals["mobile"],
+        "fisso": totals["fisso"],
+        "sky": _sky_total(totals),
+        "energy": totals["energy"],
+    }
+
+
+def month_comparison_data(conn, day):
+    """Confronti del mese del report sullo stesso giorno del periodo:
+    mese precedente, stesso mese anno precedente e media degli ultimi 12 mesi.
+    """
+    prev_year, prev_month = _prev_month(day.year, day.month)
+    prev = _comparison_values(
+        _month_to_day_totals(conn, prev_year, prev_month, day.day))
+
+    py_year, py_month = day.year - 1, day.month
+    prev_year_same_month = _comparison_values(
+        _month_to_day_totals(conn, py_year, py_month, day.day))
+
+    buckets = {"mobile": [], "fisso": [], "sky": [], "energy": []}
+    year, month = day.year, day.month
+    for _ in range(12):
+        year, month = _prev_month(year, month)
+        totals = _comparison_values(
+            _month_to_day_totals(conn, year, month, day.day))
+        for cat, value in totals.items():
+            if value is not None:
+                buckets[cat].append(value)
+
+    avg = {cat: (sum(values) / len(values) if values else None)
+           for cat, values in buckets.items()}
+    return {
+        "prevMonth": {"label": _month_label(prev_year, prev_month), **prev},
+        "prevYear": {"label": _month_label(py_year, py_month),
+                     **prev_year_same_month},
+        "avg12m": avg,
+    }
 
 def _mese_key(mese_anno):
     """Chiave di ordinamento per 'MM/YY' (come common.py mese_to_number)."""
@@ -465,6 +552,7 @@ def build_report(conn, day):
         "reportDate": day.isoformat(),
         "generatedAt": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "monthToDate": month_to_date_totals(conn, day),
+        "monthComparison": month_comparison_data(conn, day),
         "monthChart": month_chart_data(conn, day),
         "totals": {
             "count": len(sales),
@@ -604,7 +692,7 @@ def main():
     OUTPUT_FILE.write_text(json.dumps(encrypt_report(report, password)),
                            encoding="utf-8")
     print(f"Report {day.isoformat()}: {report['totals']['count']} vendite, "
-          f"{report['totals']['mult']:.2f} punti → {OUTPUT_FILE}")
+          f"{report['totals']['mult']:.2f} punti -> {OUTPUT_FILE}")
 
 
 if __name__ == "__main__":

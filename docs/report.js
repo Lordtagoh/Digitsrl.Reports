@@ -84,6 +84,52 @@ function fmtMult(n) {
     return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
 }
 
+function fmtDelta(n, digits = 2) {
+    const sign = n >= 0 ? '+' : '';
+    if (digits === 0) return `${sign}${Math.round(n)}`;
+    return `${sign}${n.toFixed(digits).replace('.', ',')}`;
+}
+
+function formatMonthLabel(label) {
+    if (!label) return '';
+    const names = {
+        '01': 'Gen', '02': 'Feb', '03': 'Mar', '04': 'Apr',
+        '05': 'Mag', '06': 'Giu', '07': 'Lug', '08': 'Ago',
+        '09': 'Set', '10': 'Ott', '11': 'Nov', '12': 'Dic',
+    };
+    return names[String(label).split('/')[0]] || String(label).split('/')[0];
+}
+
+function comparisonLine(kind, current, baseline, label, digits = 2) {
+    if (baseline === null || baseline === undefined) return null;
+    const currentValue = current ?? 0;
+    const delta = currentValue - baseline;
+    const positive = delta >= 0;
+    const node = el('span', `kpi-comparison-line ${kind}-comparison ${kind}-${positive ? 'positive' : 'negative'}`);
+    node.textContent = `${positive ? '▲' : '▼'} ${fmtDelta(delta, digits)} vs ${label}`;
+    return node;
+}
+
+function renderKpiComparison(current, comparison, cat, digits = 2) {
+    if (!comparison) return null;
+    const stack = el('div', 'comparisons-stack');
+    const prevMonth = comparison.prevMonth || {};
+    const prevYear = comparison.prevYear || {};
+    const avg12m = comparison.avg12m || {};
+    const lines = [
+        comparisonLine('mom', current, prevMonth[cat], formatMonthLabel(prevMonth.label), digits),
+        comparisonLine('yoy', current, prevYear[cat], `${formatMonthLabel(prevYear.label)} '${String(prevYear.label || '').split('/')[1] || ''}`, digits),
+        comparisonLine('avg', current, avg12m[cat], 'media 12m', digits),
+    ].filter(Boolean);
+    if (!lines.length) return null;
+    for (const line of lines) stack.appendChild(line);
+
+    const panel = el('div', 'kpi-comparison');
+    panel.appendChild(el('div', 'kpi-comparison-title', 'Confronto'));
+    panel.appendChild(stack);
+    return panel;
+}
+
 function isDarkColor(hex) {
     const n = parseInt(hex.slice(1), 16);
     const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
@@ -184,16 +230,22 @@ function renderReport(report) {
     const kpis = $('kpi-row');
     kpis.textContent = '';
     const mtd = report.monthToDate || {};
-    for (const [value, label, cls, cat] of [
-        [fmtMult(mtd.mobile ?? 0), 'Wind Mobile', 'kpi-mobile', 'mobile'],
-        [fmtMult(mtd.fisso ?? 0), 'Infostrada', 'kpi-fisso', 'fisso'],
-        [fmtMult(mtd.sky ?? 0), 'Sky', 'kpi-sky', 'sky'],
+    for (const kpi of [
+        { value: fmtMult(mtd.mobile ?? 0), raw: mtd.mobile ?? 0, label: 'Wind Mobile', cls: 'kpi-mobile', cat: 'mobile', chart: true },
+        { value: fmtMult(mtd.fisso ?? 0), raw: mtd.fisso ?? 0, label: 'Infostrada', cls: 'kpi-fisso', cat: 'fisso', chart: true },
+        { value: fmtMult(mtd.sky ?? 0), raw: mtd.sky ?? 0, label: 'Sky', cls: 'kpi-sky', cat: 'sky', chart: true },
+        { value: String(mtd.energy ?? 0), raw: mtd.energy ?? 0, label: 'Energia', cls: 'kpi-energy', cat: 'energy', digits: 0 },
     ]) {
         const tile = el('div', 'kpi');
-        tile.appendChild(el('div', `kpi-value ${cls}`, value));
-        tile.appendChild(el('div', 'kpi-label', label));
-        if (report.monthChart)
-            tile.addEventListener('click', () => openChart(cat, label, report));
+        tile.appendChild(el('div', `kpi-value ${kpi.cls}`, kpi.value));
+        tile.appendChild(el('div', 'kpi-label', kpi.label));
+        const comparison = renderKpiComparison(
+            kpi.raw, report.monthComparison, kpi.cat, kpi.digits ?? 2);
+        if (comparison) tile.appendChild(comparison);
+        if (kpi.chart && report.monthChart) {
+            tile.classList.add('clickable');
+            tile.addEventListener('click', () => openChart(kpi.cat, kpi.label, report));
+        }
         kpis.appendChild(tile);
     }
 
