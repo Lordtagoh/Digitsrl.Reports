@@ -190,28 +190,35 @@ main {
 /* KPI: hero numbers */
 .kpi-row {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
     margin-bottom: 10px;
 }
 
 .kpi {
     background: var(--surface);
     border-radius: var(--radius);
-    padding: 14px 12px;
+    padding: 10px 8px;
+    min-width: 0;
 }
 
 @media (min-width: 560px) {
-    .kpi-row { grid-template-columns: repeat(4, 1fr); }
+    .kpi-row { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .kpi { padding: 14px 12px; }
 }
 
-.kpi .kpi-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
+.kpi .kpi-value { font-size: 22px; font-weight: 700; line-height: 1.1; }
+
+@media (min-width: 560px) {
+    .kpi .kpi-value { font-size: 26px; }
+}
 
 /* Stessi colori della dashboard (Attuale DB) */
 .kpi .kpi-value.kpi-mobile { color: #fb923c; }
 .kpi .kpi-value.kpi-fisso { color: #34d399; }
 .kpi .kpi-value.kpi-sky { color: #0ea5e9; }
 .kpi .kpi-value.kpi-energy { color: #ca8a04; }
+.kpi .kpi-value.kpi-leasing { color: #a855f7; }
 
 .kpi.clickable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .kpi.clickable:active { opacity: 0.75; }
@@ -263,6 +270,40 @@ main {
     height: min(340px, 55vh);
 }
 
+.leasing-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: min(340px, 55vh);
+    overflow-y: auto;
+}
+
+.leasing-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 4px;
+    border-bottom: 1px solid var(--divider);
+}
+
+.leasing-list-item:last-child { border-bottom: none; }
+
+.leasing-list-model { font-size: 15px; }
+
+.leasing-list-count {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink-secondary);
+    flex-shrink: 0;
+}
+
+.leasing-list-empty {
+    text-align: center;
+    color: var(--ink-secondary);
+    padding: 24px 0;
+}
+
 .kpi .kpi-label {
     font-size: 13px;
     color: var(--ink-secondary);
@@ -288,7 +329,6 @@ main {
 .comparisons-stack {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
     gap: 2px;
     min-width: 0;
 }
@@ -299,9 +339,13 @@ main {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     line-height: 1.25;
+}
+
+@media (min-width: 560px) {
+    .kpi-comparison-line { font-size: 11px; }
 }
 
 .mom-positive { color: #22c55e; }

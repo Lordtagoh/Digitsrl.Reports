@@ -51,6 +51,7 @@ FILTER_FISSO = "Provider = 'Infostrada'"
 FILTER_SKY_NON_MOBILE = "Provider = 'Sky' AND IsMobile = 0"
 FILTER_SKY_MOBILE = "Provider = 'Sky' AND IsMobile = 1"
 FILTER_ENERGY = "IsEnergy = 1"
+FILTER_LEASING = "IsLeasing = 1 AND IsFindomestic = 1"
 
 
 # ── PagoDealer.db (sola lettura) ─────────────────────────────────────────────
@@ -260,7 +261,8 @@ def month_to_date_totals(conn, day):
         f"SUM(CASE WHEN {f} THEN Contract_Multiplier ELSE 0 END),"
         f"COUNT(CASE WHEN {f} THEN 1 END)"
         for f in filters.values())
-    cases = f"{cases},COUNT(CASE WHEN {FILTER_ENERGY} THEN 1 END)"
+    cases = (f"{cases},COUNT(CASE WHEN {FILTER_ENERGY} THEN 1 END),"
+             f"COUNT(CASE WHEN {FILTER_LEASING} THEN 1 END)")
     cur = conn.cursor()
     cur.execute(
         f"SELECT {cases} FROM Sales WHERE DATE(DateTime) BETWEEN ? AND ?",
@@ -272,7 +274,7 @@ def month_to_date_totals(conn, day):
     sky = (None if t["sky_nm"] is None and t["sky_m"] is None
            else (t["sky_nm"] or 0) + (t["sky_m"] or 0))
     return {"mobile": t["mobile"], "fisso": t["fisso"], "sky": sky,
-            "energy": row[energy_idx] or 0}
+            "energy": row[energy_idx] or 0, "leasing": row[energy_idx + 1] or 0}
 
 
 def _month_label(year, month):
@@ -292,7 +294,8 @@ def _range_totals(conn, start, end):
         f"SUM(CASE WHEN {f} THEN Contract_Multiplier ELSE 0 END),"
         f"COUNT(CASE WHEN {f} THEN 1 END)"
         for f in filters.values())
-    cases = f"{cases},COUNT(CASE WHEN {FILTER_ENERGY} THEN 1 END)"
+    cases = (f"{cases},COUNT(CASE WHEN {FILTER_ENERGY} THEN 1 END),"
+             f"COUNT(CASE WHEN {FILTER_LEASING} THEN 1 END)")
     cur = conn.cursor()
     cur.execute(
         f"SELECT {cases} FROM Sales WHERE DATE(DateTime) BETWEEN ? AND ?",
@@ -302,6 +305,7 @@ def _range_totals(conn, start, end):
     totals = {c: (row[i * 2] if row[i * 2 + 1] else None)
               for i, c in enumerate(filters)}
     totals["energy"] = row[energy_idx] or 0
+    totals["leasing"] = row[energy_idx + 1] or 0
     return totals
 
 
@@ -323,6 +327,7 @@ def _comparison_values(totals):
         "fisso": totals["fisso"],
         "sky": _sky_total(totals),
         "energy": totals["energy"],
+        "leasing": totals["leasing"],
     }
 
 
@@ -338,7 +343,7 @@ def month_comparison_data(conn, day):
     prev_year_same_month = _comparison_values(
         _month_to_day_totals(conn, py_year, py_month, day.day))
 
-    buckets = {"mobile": [], "fisso": [], "sky": [], "energy": []}
+    buckets = {"mobile": [], "fisso": [], "sky": [], "energy": [], "leasing": []}
     year, month = day.year, day.month
     for _ in range(12):
         year, month = _prev_month(year, month)
@@ -460,6 +465,21 @@ def month_chart_data(conn, day):
     return chart
 
 
+def leasing_model_breakdown(conn, day):
+    """Modelli in leasing Findomestic (IsLeasing = 1 AND IsFindomestic = 1)
+    dal 1° del mese al giorno del report, distinti per LeasingModel e
+    ordinati per conteggio decrescente."""
+    start = day.replace(day=1)
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT LeasingModel, COUNT(*) FROM Sales "
+        f"WHERE DATE(DateTime) BETWEEN ? AND ? AND {FILTER_LEASING} "
+        "GROUP BY LeasingModel ORDER BY COUNT(*) DESC",
+        (start.isoformat(), day.isoformat()))
+    return [{"model": model or "—", "count": count}
+            for model, count in cur.fetchall()]
+
+
 def last_day_with_sales(conn, upto):
     """Ultimo giorno (<= upto) con almeno una vendita, o None."""
     cur = conn.cursor()
@@ -554,6 +574,7 @@ def build_report(conn, day):
         "monthToDate": month_to_date_totals(conn, day),
         "monthComparison": month_comparison_data(conn, day),
         "monthChart": month_chart_data(conn, day),
+        "leasingModels": leasing_model_breakdown(conn, day),
         "totals": {
             "count": len(sales),
             "mult": round(total_mult, 2),
@@ -681,7 +702,7 @@ def main():
     if args.plain:
         Path(args.plain).write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"⚠️  JSON in chiaro scritto in {args.plain} (NON committare)")
+        print(f"ATTENZIONE: JSON in chiaro scritto in {args.plain} (NON committare)")
 
     if not args.force and report_is_unchanged(report, password):
         print(f"Nessuna variazione rispetto a {OUTPUT_FILE.name}: "

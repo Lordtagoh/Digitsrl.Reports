@@ -84,7 +84,7 @@ function fmtMult(n) {
     return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
 }
 
-function fmtDelta(n, digits = 2) {
+function fmtDelta(n, digits = 1) {
     const sign = n >= 0 ? '+' : '';
     if (digits === 0) return `${sign}${Math.round(n)}`;
     return `${sign}${n.toFixed(digits).replace('.', ',')}`;
@@ -100,7 +100,7 @@ function formatMonthLabel(label) {
     return names[String(label).split('/')[0]] || String(label).split('/')[0];
 }
 
-function comparisonLine(kind, current, baseline, label, digits = 2) {
+function comparisonLine(kind, current, baseline, label, digits = 1) {
     if (baseline === null || baseline === undefined) return null;
     const currentValue = current ?? 0;
     const delta = currentValue - baseline;
@@ -110,7 +110,7 @@ function comparisonLine(kind, current, baseline, label, digits = 2) {
     return node;
 }
 
-function renderKpiComparison(current, comparison, cat, digits = 2) {
+function renderKpiComparison(current, comparison, cat, digits = 1) {
     if (!comparison) return null;
     const stack = el('div', 'comparisons-stack');
     const prevMonth = comparison.prevMonth || {};
@@ -141,6 +141,19 @@ function el(tag, className, text) {
     if (className) node.className = className;
     if (text !== undefined) node.textContent = text;
     return node;
+}
+
+function groupSalesBy(sales, field) {
+    const totals = {};
+    for (const sale of sales) {
+        const key = sale[field] || '?';
+        const bucket = totals[key] || { count: 0, mult: 0, icons: [] };
+        bucket.count += 1;
+        bucket.mult += sale.mult;
+        bucket.icons.push(sale.icon);
+        totals[key] = bucket;
+    }
+    return totals;
 }
 
 function renderSummaryGroup(container, title, entries) {
@@ -235,25 +248,34 @@ function renderReport(report) {
         { value: fmtMult(mtd.fisso ?? 0), raw: mtd.fisso ?? 0, label: 'Infostrada', cls: 'kpi-fisso', cat: 'fisso', chart: true },
         { value: fmtMult(mtd.sky ?? 0), raw: mtd.sky ?? 0, label: 'Sky', cls: 'kpi-sky', cat: 'sky', chart: true },
         { value: String(mtd.energy ?? 0), raw: mtd.energy ?? 0, label: 'Energia', cls: 'kpi-energy', cat: 'energy', digits: 0 },
+        { value: String(mtd.leasing ?? 0), raw: mtd.leasing ?? 0, label: 'Findomestic', cls: 'kpi-leasing', cat: 'leasing', digits: 0, list: true },
     ]) {
         const tile = el('div', 'kpi');
         tile.appendChild(el('div', `kpi-value ${kpi.cls}`, kpi.value));
         tile.appendChild(el('div', 'kpi-label', kpi.label));
         const comparison = renderKpiComparison(
-            kpi.raw, report.monthComparison, kpi.cat, kpi.digits ?? 2);
+            kpi.raw, report.monthComparison, kpi.cat, kpi.digits ?? 1);
         if (comparison) tile.appendChild(comparison);
-        if (kpi.chart && report.monthChart) {
+        if (kpi.list) {
+            tile.classList.add('clickable');
+            tile.addEventListener('click', () => openLeasingList(kpi.label, report));
+        } else if (kpi.chart && report.monthChart) {
             tile.classList.add('clickable');
             tile.addEventListener('click', () => openChart(kpi.cat, kpi.label, report));
         }
         kpis.appendChild(tile);
     }
 
-    // Categorie
+    // Solo prepaid/postpaid: categorie, lista vendite, riepiloghi Negozi/Venditori
+    const visibleSales = report.sales.filter(
+        (sale) => sale.kind === 'prepaid' || sale.kind === 'postpaid');
+
     const chips = $('category-summary');
     chips.textContent = '';
-    for (const [cat, v] of Object.entries(report.totals.byCategory)) {
-        if (!v.count) continue;
+    const categoryTotals = groupSalesBy(visibleSales, 'category');
+    for (const cat of Object.keys(report.totals.byCategory)) {
+        const v = categoryTotals[cat];
+        if (!v || !v.count) continue;
         const chip = el('span', 'chip');
         const dot = el('span', 'dot');
         dot.style.backgroundColor = CATEGORY_DOTS[cat] || '#9a9aa0';
@@ -263,16 +285,16 @@ function renderReport(report) {
         chips.appendChild(chip);
     }
 
-    renderSummaryGroup($('pos-summary'), 'Negozi', report.totals.byPos);
-    renderSummaryGroup($('seller-summary'), 'Venditori', report.totals.bySeller);
+    renderSummaryGroup($('pos-summary'), 'Negozi', groupSalesBy(visibleSales, 'pos'));
+    renderSummaryGroup($('seller-summary'), 'Venditori', groupSalesBy(visibleSales, 'seller'));
 
     // Lista vendite
     const list = $('sales-list');
     list.textContent = '';
-    if (!report.sales.length) {
+    if (!visibleSales.length) {
         list.appendChild(el('p', 'empty-day', 'Nessuna vendita registrata oggi.'));
     } else {
-        for (const sale of report.sales) list.appendChild(renderSaleCard(sale));
+        for (const sale of visibleSales) list.appendChild(renderSaleCard(sale));
     }
 
     $('generated-at').textContent = `Report generato il ${report.generatedAt}`;
@@ -297,6 +319,9 @@ const CHART_COLORS = {
 function openChart(cat, label, report) {
     const mc = report.monthChart;
     if (!mc || typeof Chart === 'undefined') return;
+
+    $('leasing-list').classList.add('hidden');
+    $('chart-wrap').classList.remove('hidden');
 
     const dark = matchMedia('(prefers-color-scheme: dark)').matches;
     const tickColor = dark ? '#9aa5b9' : '#5b6472';
@@ -396,6 +421,33 @@ function closeChart() {
         monthChart.destroy();
         monthChart = null;
     }
+}
+
+function openLeasingList(label, report) {
+    const models = report.leasingModels || [];
+
+    $('chart-modal-title').textContent = label;
+    $('chart-wrap').classList.add('hidden');
+    if (monthChart) {
+        monthChart.destroy();
+        monthChart = null;
+    }
+
+    const list = $('leasing-list');
+    list.textContent = '';
+    if (!models.length) {
+        list.appendChild(el('li', 'leasing-list-empty', 'Nessun leasing questo mese.'));
+    } else {
+        for (const m of models) {
+            const item = el('li', 'leasing-list-item');
+            item.appendChild(el('span', 'leasing-list-model', m.model));
+            item.appendChild(el('span', 'leasing-list-count', String(m.count)));
+            list.appendChild(item);
+        }
+    }
+    list.classList.remove('hidden');
+
+    $('chart-modal').classList.remove('hidden');
 }
 
 $('chart-modal-close').addEventListener('click', closeChart);
