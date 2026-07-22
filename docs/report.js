@@ -461,4 +461,9 @@ $('forget-btn').addEventListener('click', () => {
     location.reload();
 });
 
+$('refresh-btn').addEventListener('click', () => {
+    $('refresh-btn').classList.add('spinning');
+    location.reload();
+});
+
 init();
